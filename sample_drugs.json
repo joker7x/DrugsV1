@@ -1,0 +1,47 @@
+[
+  {
+    "name": "باراسيتامول 500 مجم",
+    "newPrice": 15.50,
+    "oldPrice": 18.00,
+    "no": "DRUG001",
+    "updateDate": "2024-01-15",
+    "activeIngredient": "Paracetamol",
+    "averageDiscountPercent": 13.9
+  },
+  {
+    "name": "أموكسيسيلين 250 مجم",
+    "newPrice": 25.75,
+    "oldPrice": 30.00,
+    "no": "DRUG002",
+    "updateDate": "2024-01-15",
+    "activeIngredient": "Amoxicillin",
+    "averageDiscountPercent": 14.2
+  },
+  {
+    "name": "إيبوبروفين 400 مجم",
+    "newPrice": 12.80,
+    "oldPrice": 15.50,
+    "no": "DRUG003",
+    "updateDate": "2024-01-15",
+    "activeIngredient": "Ibuprofen",
+    "averageDiscountPercent": 17.4
+  },
+  {
+    "name": "أوميبرازول 20 مجم",
+    "newPrice": 45.90,
+    "oldPrice": 52.00,
+    "no": "DRUG004",
+    "updateDate": "2024-01-15",
+    "activeIngredient": "Omeprazole",
+    "averageDiscountPercent": 11.7
+  },
+  {
+    "name": "سيتريزين 10 مجم",
+    "newPrice": 18.25,
+    "oldPrice": 22.00,
+    "no": "DRUG005",
+    "updateDate": "2024-01-15",
+    "activeIngredient": "Cetirizine",
+    "averageDiscountPercent": 17.0
+  }
+]
