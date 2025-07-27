@@ -27,6 +27,7 @@ import {
   FlaskRoundIcon as Flask,
   User,
   AlertTriangle,
+  Activity,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -47,6 +48,8 @@ import {
 import { authManager } from "@/lib/auth"
 import { cacheManager } from "@/lib/cache"
 import { shortageManager, type Shortage } from "@/lib/shortages" // Import shortage manager
+import { dataManager } from "@/lib/data-management" // Import data manager
+import Link from "next/link"
 
 interface Drug {
   id: string
@@ -156,6 +159,13 @@ export default function AdminPanel() {
   })
   const [shortageSearchTerm, setShortageSearchTerm] = useState("")
 
+  // Data Management States
+  const [dataManagementLoading, setDataManagementLoading] = useState(false)
+  const [dataManagementMessage, setDataManagementMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [importUrl, setImportUrl] = useState("")
+  const [backups, setBackups] = useState<string[]>([])
+  const [selectedBackup, setSelectedBackup] = useState("")
+
   useEffect(() => {
     setIsAuthenticated(authManager.isAuthenticated())
   }, [])
@@ -166,6 +176,7 @@ export default function AdminPanel() {
       fetchPageContent()
       fetchRatings() // Fetch ratings when authenticated
       fetchShortages() // Fetch shortages when authenticated
+      fetchBackups() // Fetch backups when authenticated
     }
   }, [isAuthenticated])
 
@@ -550,6 +561,152 @@ export default function AdminPanel() {
     setTimeout(() => setShortageMessage(null), 3000)
   }
 
+  // Data Management Functions
+  const fetchBackups = async () => {
+    try {
+      const backupsData = await dataManager.getBackups()
+      setBackups(backupsData)
+    } catch (error) {
+      console.error("Error fetching backups:", error)
+    }
+  }
+
+  const handleImportFromFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setDataManagementLoading(true)
+    setDataManagementMessage(null)
+
+    try {
+      const adminEmail = authManager.getCurrentUser() || "admin@example.com"
+      const result = await dataManager.importFromFile(file, adminEmail)
+      
+      if (result.success) {
+        setDataManagementMessage({ 
+          type: "success", 
+          text: `${result.message}${result.errors ? ` (${result.errors.length} أخطاء)` : ''}` 
+        })
+        fetchDrugs() // Refresh drugs list
+        fetchBackups() // Refresh backups
+      } else {
+        setDataManagementMessage({ type: "error", text: result.message })
+      }
+    } catch (error) {
+      console.error("Import error:", error)
+      setDataManagementMessage({ type: "error", text: "حدث خطأ أثناء الاستيراد" })
+    } finally {
+      setDataManagementLoading(false)
+      event.target.value = "" // Reset file input
+    }
+  }
+
+  const handleImportFromUrl = async () => {
+    if (!importUrl.trim()) {
+      setDataManagementMessage({ type: "error", text: "يرجى إدخال رابط صحيح" })
+      return
+    }
+
+    setDataManagementLoading(true)
+    setDataManagementMessage(null)
+
+    try {
+      const adminEmail = authManager.getCurrentUser() || "admin@example.com"
+      const result = await dataManager.importFromUrl(importUrl, adminEmail)
+      
+      if (result.success) {
+        setDataManagementMessage({ 
+          type: "success", 
+          text: `${result.message}${result.errors ? ` (${result.errors.length} أخطاء)` : ''}` 
+        })
+        setImportUrl("") // Clear URL input
+        fetchDrugs() // Refresh drugs list
+        fetchBackups() // Refresh backups
+      } else {
+        setDataManagementMessage({ type: "error", text: result.message })
+      }
+    } catch (error) {
+      console.error("Import from URL error:", error)
+      setDataManagementMessage({ type: "error", text: "حدث خطأ أثناء الاستيراد من الرابط" })
+    } finally {
+      setDataManagementLoading(false)
+    }
+  }
+
+  const handleExportData = async () => {
+    try {
+      const data = await dataManager.exportData()
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `drugs_data_${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error("Export error:", error)
+      setDataManagementMessage({ type: "error", text: "حدث خطأ أثناء تصدير البيانات" })
+    }
+  }
+
+  const handleDeleteAllData = async () => {
+    if (!confirm("هل أنت متأكد من حذف جميع البيانات؟ هذا الإجراء لا يمكن التراجع عنه!")) return
+
+    setDataManagementLoading(true)
+    setDataManagementMessage(null)
+
+    try {
+      const adminEmail = authManager.getCurrentUser() || "admin@example.com"
+      const success = await dataManager.deleteAllData(adminEmail)
+      
+      if (success) {
+        setDataManagementMessage({ type: "success", text: "تم حذف جميع البيانات بنجاح" })
+        fetchDrugs() // Refresh drugs list
+        fetchBackups() // Refresh backups
+      } else {
+        setDataManagementMessage({ type: "error", text: "فشل في حذف البيانات" })
+      }
+    } catch (error) {
+      console.error("Delete all data error:", error)
+      setDataManagementMessage({ type: "error", text: "حدث خطأ أثناء حذف البيانات" })
+    } finally {
+      setDataManagementLoading(false)
+    }
+  }
+
+  const handleRestoreData = async () => {
+    if (!selectedBackup) {
+      setDataManagementMessage({ type: "error", text: "يرجى اختيار نسخة احتياطية" })
+      return
+    }
+
+    if (!confirm("هل أنت متأكد من استعادة البيانات؟ سيتم استبدال البيانات الحالية.")) return
+
+    setDataManagementLoading(true)
+    setDataManagementMessage(null)
+
+    try {
+      const adminEmail = authManager.getCurrentUser() || "admin@example.com"
+      const success = await dataManager.restoreData(selectedBackup, adminEmail)
+      
+      if (success) {
+        setDataManagementMessage({ type: "success", text: "تم استعادة البيانات بنجاح" })
+        setSelectedBackup("") // Clear selection
+        fetchDrugs() // Refresh drugs list
+        fetchBackups() // Refresh backups
+      } else {
+        setDataManagementMessage({ type: "error", text: "فشل في استعادة البيانات" })
+      }
+    } catch (error) {
+      console.error("Restore data error:", error)
+      setDataManagementMessage({ type: "error", text: "حدث خطأ أثناء استعادة البيانات" })
+    } finally {
+      setDataManagementLoading(false)
+    }
+  }
+
   const filteredDrugs = drugs.filter(
     (drug) =>
       drug.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -701,6 +858,14 @@ export default function AdminPanel() {
           >
             <AlertTriangle className="ml-2 h-5 w-5" />
             إدارة النواقص
+          </Button>
+          <Button
+            variant="ghost"
+            className={`rounded-none border-b-2 flex-1 ${activeTab === "data" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
+            onClick={() => setActiveTab("data")}
+          >
+            <Database className="ml-2 h-5 w-5" />
+            إدارة البيانات
           </Button>
         </div>
 
@@ -1879,6 +2044,243 @@ export default function AdminPanel() {
                     </tbody>
                   </table>
                 </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* Data Management Tab */}
+        {activeTab === "data" && (
+          <>
+            {/* Data Management Message */}
+            {dataManagementMessage && (
+              <Alert
+                className={`mb-6 ${dataManagementMessage.type === "success" ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}
+              >
+                <AlertDescription
+                  className={`text-sm ${dataManagementMessage.type === "success" ? "text-green-800" : "text-red-800"}`}
+                >
+                  {dataManagementMessage.text}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Data Management Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-blue-100">إجمالي الأدوية</p>
+                      <p className="text-3xl font-bold">{drugs.length}</p>
+                    </div>
+                    <Database className="h-12 w-12 text-blue-200" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-green-100">النسخ الاحتياطية</p>
+                      <p className="text-3xl font-bold">{backups.length}</p>
+                    </div>
+                    <FileText className="h-12 w-12 text-green-200" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-purple-100">آخر تحديث</p>
+                      <p className="text-sm font-medium">
+                        {drugs.length > 0 ? new Date().toLocaleDateString("ar-EG") : "لا يوجد"}
+                      </p>
+                    </div>
+                    <RefreshCw className="h-12 w-12 text-purple-200" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Import Section */}
+            <Card className="mb-6 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5" />
+                  استيراد البيانات
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Import from File */}
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h3 className="font-semibold mb-3 text-gray-800">استيراد من ملف JSON</h3>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportFromFile}
+                      className="flex-1 p-2 border border-gray-300 rounded-md bg-white"
+                      disabled={dataManagementLoading}
+                    />
+                    <Button
+                      onClick={() => document.getElementById('file-input')?.click()}
+                      disabled={dataManagementLoading}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {dataManagementLoading ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "اختيار ملف"
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    يجب أن يحتوي الملف على مصفوفة من كائنات الأدوية بصيغة JSON
+                  </p>
+                </div>
+
+                {/* Import from URL */}
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h3 className="font-semibold mb-3 text-gray-800">استيراد من رابط</h3>
+                  <div className="flex items-center gap-4">
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/drugs.json"
+                      value={importUrl}
+                      onChange={(e) => setImportUrl(e.target.value)}
+                      className="flex-1"
+                      disabled={dataManagementLoading}
+                    />
+                    <Button
+                      onClick={handleImportFromUrl}
+                      disabled={dataManagementLoading || !importUrl.trim()}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {dataManagementLoading ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "استيراد"
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    أدخل رابط يحتوي على بيانات الأدوية بصيغة JSON
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Export and Backup Section */}
+            <Card className="mb-6 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  تصدير البيانات والنسخ الاحتياطية
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Export Current Data */}
+                <div className="border rounded-lg p-4 bg-blue-50">
+                  <h3 className="font-semibold mb-3 text-blue-800">تصدير البيانات الحالية</h3>
+                  <Button
+                    onClick={handleExportData}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    تصدير البيانات
+                  </Button>
+                  <p className="text-sm text-blue-600 mt-2">
+                    تحميل جميع بيانات الأدوية الحالية كملف JSON
+                  </p>
+                </div>
+
+                {/* Restore from Backup */}
+                <div className="border rounded-lg p-4 bg-green-50">
+                  <h3 className="font-semibold mb-3 text-green-800">استعادة من نسخة احتياطية</h3>
+                  <div className="flex items-center gap-4 mb-3">
+                    <Select value={selectedBackup} onValueChange={setSelectedBackup}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="اختر نسخة احتياطية" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {backups.map((backup) => (
+                          <SelectItem key={backup} value={backup}>
+                            {new Date(Number(backup)).toLocaleString("ar-EG")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={handleRestoreData}
+                      disabled={!selectedBackup || dataManagementLoading}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {dataManagementLoading ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "استعادة"
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-sm text-green-600">
+                    استعادة البيانات من نسخة احتياطية سابقة
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Danger Zone */}
+            <Card className="mb-6 shadow-lg border-0 bg-red-50 border-red-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-red-800">
+                  <AlertTriangle className="h-5 w-5" />
+                  منطقة الخطر
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="border border-red-300 rounded-lg p-4 bg-red-100">
+                  <h3 className="font-semibold mb-3 text-red-800">حذف جميع البيانات</h3>
+                  <p className="text-sm text-red-700 mb-4">
+                    تحذير: هذا الإجراء سيحذف جميع بيانات الأدوية من قاعدة البيانات. 
+                    سيتم إنشاء نسخة احتياطية تلقائياً قبل الحذف.
+                  </p>
+                  <Button
+                    onClick={handleDeleteAllData}
+                    disabled={dataManagementLoading}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    {dataManagementLoading ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "حذف جميع البيانات"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Logs Navigation */}
+            <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  سجلات الموقع
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-gray-600 mb-4">
+                  عرض سجلات جميع العمليات والإجراءات التي تمت على الموقع
+                </p>
+                <Link href="/admin-panel-secure/logs">
+                  <Button className="bg-purple-600 hover:bg-purple-700 text-white">
+                    <Activity className="h-4 w-4 mr-2" />
+                    عرض السجلات
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </>

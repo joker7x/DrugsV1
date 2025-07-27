@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { cacheManager } from "@/lib/cache"
 import Link from "next/link"
-import DrugDetailsModal from "@/components/drug-details-modal"
+// import DrugDetailsModal from "@/components/drug-details-modal" // Removed
 import WebsiteRatingSection from "@/components/website-rating-section"
 import { shortageManager, type Shortage } from "@/lib/shortages"
 
@@ -54,8 +54,8 @@ export default function DrugPricingApp() {
   const [isOnline, setIsOnline] = useState(true)
   const [retryCount, setRetryCount] = useState(0)
   const [isFromCache, setIsFromCache] = useState(false)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null)
+  // const [isModalOpen, setIsModalOpen] = useState(false) // Removed
+  // const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null) // Removed
   const [criticalShortagesCount, setCriticalShortagesCount] = useState(0)
 
   // Check online status
@@ -323,8 +323,7 @@ export default function DrugPricingApp() {
   }
 
   const handleDrugCardClick = (drug: Drug) => {
-    setSelectedDrug(drug)
-    setIsModalOpen(true)
+    // Removed rating modal functionality - no action on click
   }
 
   if (loading) {
@@ -654,8 +653,7 @@ export default function DrugPricingApp() {
         {/* Website Rating Section */}
         <WebsiteRatingSection />
 
-        {/* Drug Details Modal */}
-        <DrugDetailsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} drug={selectedDrug} />
+        {/* Drug Details Modal - Removed */}
       </div>
     </div>
   )

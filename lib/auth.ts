@@ -52,4 +52,24 @@ export const authManager = {
       console.warn("Failed to logout:", error)
     }
   },
+
+  getCurrentUser: (): string | null => {
+    try {
+      const authData = localStorage.getItem(AUTH_KEY)
+      if (!authData) return null
+
+      const parsed = JSON.parse(authData)
+      const isExpired = Date.now() - parsed.timestamp > AUTH_DURATION
+
+      if (isExpired) {
+        localStorage.removeItem(AUTH_KEY)
+        return null
+      }
+
+      return parsed.isAuthenticated ? ADMIN_CREDENTIALS.email : null
+    } catch (error) {
+      console.warn("Failed to get current user:", error)
+      return null
+    }
+  },
 }
