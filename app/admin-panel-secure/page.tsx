@@ -27,6 +27,12 @@ import {
   FlaskRoundIcon as Flask,
   User,
   AlertTriangle,
+  Upload,
+  Download,
+  Trash,
+  FileUp,
+  FileDown,
+  Settings,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -47,6 +53,9 @@ import {
 import { authManager } from "@/lib/auth"
 import { cacheManager } from "@/lib/cache"
 import { shortageManager, type Shortage } from "@/lib/shortages" // Import shortage manager
+import { localDataManager } from "@/lib/local-data" // Import local data manager
+import SiteRecordsDisplay from "@/components/site-records-display"
+import { executeCommand } from "@/lib/commands"
 
 interface Drug {
   id: string
@@ -105,12 +114,12 @@ export default function AdminPanel() {
     averageDiscountPercent: "",
   })
   const [saveMessage, setSaveMessage] = useState("")
-  const [activeTab, setActiveTab] = useState("drugs") // 'drugs' or 'pages' or 'ratings'
-
-  // Pagination for admin drug list
   const [adminCurrentPage, setAdminCurrentPage] = useState(1)
+  const [activeTab, setActiveTab] = useState<"drugs" | "pages" | "ratings" | "shortages" | "data" | "records">("drugs")
 
-  // Page Content States
+  // Page content management
+  const [pageContentLoading, setPageContentLoading] = useState(false)
+  const [pageSaveMessage, setPageSaveMessage] = useState("")
   const [aboutContent, setAboutContent] = useState<AboutPageContent>({
     title: "",
     intro: "",
@@ -134,27 +143,32 @@ export default function AdminPanel() {
     responseTitle: "",
     responseText: "",
   })
-  const [pageContentLoading, setPageContentLoading] = useState(false)
-  const [pageSaveMessage, setPageSaveMessage] = useState("")
 
-  // Ratings Management States
+  // Ratings management
+  const [ratingsManagementLoading, setRatingsManagementLoading] = useState(false)
   const [productRatings, setProductRatings] = useState<ProductRating[]>([])
   const [websiteRatings, setWebsiteRatings] = useState<WebsiteRating[]>([])
-  const [ratingsManagementLoading, setRatingsManagementLoading] = useState(false)
   const [ratingsMessage, setRatingsMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
-  // Shortages Management States
-  const [shortages, setShortages] = useState<Shortage[]>([])
+  // Shortages management
   const [shortagesLoading, setShortagesLoading] = useState(false)
-  const [shortageMessage, setShortageMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [shortages, setShortages] = useState<Shortage[]>([])
+  const [shortageSearchTerm, setShortageSearchTerm] = useState("")
   const [isAddingNewShortage, setIsAddingNewShortage] = useState(false)
   const [editingShortage, setEditingShortage] = useState<Shortage | null>(null)
   const [newShortage, setNewShortage] = useState({
-    drugName: "", // Changed from drugId to drugName
+    drugName: "",
     reason: "",
     status: "moderate" as "critical" | "moderate" | "resolved",
   })
-  const [shortageSearchTerm, setShortageSearchTerm] = useState("")
+  const [shortageMessage, setShortageMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+
+  // Data management
+  const [dataMessage, setDataMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [commandInput, setCommandInput] = useState("")
+  const [commandResult, setCommandResult] = useState<{ success: boolean; message: string; data?: any } | null>(null)
 
   useEffect(() => {
     setIsAuthenticated(authManager.isAuthenticated())
@@ -550,6 +564,175 @@ export default function AdminPanel() {
     setTimeout(() => setShortageMessage(null), 3000)
   }
 
+  // Data management functions
+  const exportData = async () => {
+    setIsExporting(true)
+    try {
+      // Use local data manager for export
+      const localExportData = localDataManager.exportData()
+      if (!localExportData) {
+        throw new Error("لا توجد بيانات محلية للتصدير")
+      }
+
+      const exportData = {
+        ...localExportData,
+        aboutContent: aboutContent,
+        contactContent: contactContent,
+        exportDate: new Date().toISOString(),
+      }
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `drugs-data-${new Date().toISOString().split("T")[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      setDataMessage({ type: "success", text: "تم تصدير البيانات بنجاح" })
+    } catch (error) {
+      setDataMessage({ type: "error", text: "فشل في تصدير البيانات" })
+    }
+    setIsExporting(false)
+    setTimeout(() => setDataMessage(null), 3000)
+  }
+
+  const importData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setIsImporting(true)
+    try {
+      const text = await file.text()
+      const importedData = JSON.parse(text)
+
+      if (importedData.drugs && Array.isArray(importedData.drugs)) {
+        // Validate and process imported drugs
+        const validDrugs = importedData.drugs.filter((drug: any) => 
+          drug.name && drug.newPrice && drug.oldPrice && drug.no
+        )
+
+        if (validDrugs.length === 0) {
+          throw new Error("لا توجد بيانات أدوية صحيحة في الملف")
+        }
+
+        // Save to local storage first
+        const success = localDataManager.importData(importedData)
+        if (!success) {
+          throw new Error("فشل في حفظ البيانات محلياً")
+        }
+
+        // Also save to Firebase for backup
+        for (const drug of validDrugs) {
+          await saveDrugToFirebase(drug, drug.id)
+        }
+
+        setDrugs(validDrugs)
+        setDataMessage({ 
+          type: "success", 
+          text: `تم استيراد ${validDrugs.length} دواء بنجاح` 
+        })
+      } else {
+        throw new Error("تنسيق الملف غير صحيح")
+      }
+    } catch (error: any) {
+      setDataMessage({ 
+        type: "error", 
+        text: error.message || "فشل في استيراد البيانات" 
+      })
+    }
+    setIsImporting(false)
+    setTimeout(() => setDataMessage(null), 3000)
+    event.target.value = "" // Reset file input
+  }
+
+  const deleteAllData = async () => {
+    if (!confirm("هل أنت متأكد من حذف جميع البيانات؟ هذا الإجراء لا يمكن التراجع عنه.")) {
+      return
+    }
+
+    try {
+      // Delete all drugs from Firebase
+      for (const drug of drugs) {
+        await deleteDrugFromFirebase(drug.id)
+      }
+
+      // Delete all shortages
+      for (const shortage of shortages) {
+        await shortageManager.deleteShortage(shortage.id)
+      }
+
+      // Clear local data
+      localDataManager.clearAllData()
+      cacheManager.clear()
+
+      setDrugs([])
+      setShortages([])
+      setDataMessage({ type: "success", text: "تم حذف جميع البيانات بنجاح" })
+    } catch (error) {
+      setDataMessage({ type: "error", text: "فشل في حذف البيانات" })
+    }
+    setTimeout(() => setDataMessage(null), 3000)
+  }
+
+  const backupData = async () => {
+    try {
+      // Get local data for backup
+      const localData = localDataManager.exportData()
+      if (!localData) {
+        throw new Error("لا توجد بيانات محلية للنسخ الاحتياطي")
+      }
+
+      const backupData = {
+        ...localData,
+        aboutContent: aboutContent,
+        contactContent: contactContent,
+        ratings: {
+          productRatings: productRatings,
+          websiteRatings: websiteRatings,
+        },
+        backupDate: new Date().toISOString(),
+        totalProductRatings: productRatings.length,
+        totalWebsiteRatings: websiteRatings.length,
+      }
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `backup-${new Date().toISOString().split("T")[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      setDataMessage({ type: "success", text: "تم إنشاء نسخة احتياطية بنجاح" })
+    } catch (error) {
+      setDataMessage({ type: "error", text: "فشل في إنشاء النسخة الاحتياطية" })
+    }
+    setTimeout(() => setDataMessage(null), 3000)
+  }
+
+  const executeCommandHandler = () => {
+    if (!commandInput.trim()) return
+
+    const result = executeCommand(commandInput.trim())
+    setCommandResult(result)
+    
+    if (result.success) {
+      setDataMessage({ type: "success", text: result.message })
+    } else {
+      setDataMessage({ type: "error", text: result.message })
+    }
+    
+    setTimeout(() => {
+      setCommandResult(null)
+      setDataMessage(null)
+    }, 5000)
+  }
+
   const filteredDrugs = drugs.filter(
     (drug) =>
       drug.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -669,38 +852,60 @@ export default function AdminPanel() {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 mb-6">
+        <div className="flex flex-wrap border-b border-gray-200 mb-6 overflow-x-auto">
           <Button
             variant="ghost"
-            className={`rounded-none border-b-2 flex-1 ${activeTab === "drugs" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
+            className={`rounded-none border-b-2 flex-1 min-w-[120px] text-sm ${activeTab === "drugs" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
             onClick={() => setActiveTab("drugs")}
           >
-            <Database className="ml-2 h-5 w-5" />
-            إدارة الأدوية
+            <Database className="ml-1 h-4 w-4" />
+            <span className="hidden sm:inline">إدارة الأدوية</span>
+            <span className="sm:hidden">الأدوية</span>
           </Button>
           <Button
             variant="ghost"
-            className={`rounded-none border-b-2 flex-1 ${activeTab === "pages" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
+            className={`rounded-none border-b-2 flex-1 min-w-[120px] text-sm ${activeTab === "pages" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
             onClick={() => setActiveTab("pages")}
           >
-            <FileText className="ml-2 h-5 w-5" />
-            إدارة الصفحات
+            <FileText className="ml-1 h-4 w-4" />
+            <span className="hidden sm:inline">إدارة الصفحات</span>
+            <span className="sm:hidden">الصفحات</span>
           </Button>
           <Button
             variant="ghost"
-            className={`rounded-none border-b-2 flex-1 ${activeTab === "ratings" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
+            className={`rounded-none border-b-2 flex-1 min-w-[120px] text-sm ${activeTab === "ratings" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
             onClick={() => setActiveTab("ratings")}
           >
-            <Star className="ml-2 h-5 w-5" />
-            إدارة التقييمات
+            <Star className="ml-1 h-4 w-4" />
+            <span className="hidden sm:inline">إدارة التقييمات</span>
+            <span className="sm:hidden">التقييمات</span>
           </Button>
           <Button
             variant="ghost"
-            className={`rounded-none border-b-2 flex-1 ${activeTab === "shortages" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
+            className={`rounded-none border-b-2 flex-1 min-w-[120px] text-sm ${activeTab === "shortages" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
             onClick={() => setActiveTab("shortages")}
           >
-            <AlertTriangle className="ml-2 h-5 w-5" />
-            إدارة النواقص
+            <AlertTriangle className="ml-1 h-4 w-4" />
+            <span className="hidden sm:inline">إدارة النواقص</span>
+            <span className="sm:hidden">النواقص</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`rounded-none border-b-2 flex-1 min-w-[120px] text-sm ${activeTab === "data" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
+            onClick={() => setActiveTab("data")}
+          >
+            <Settings className="ml-1 h-4 w-4" />
+            <span className="hidden sm:inline">إدارة البيانات</span>
+            <span className="sm:hidden">البيانات</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`rounded-none border-b-2 flex-1 min-w-[120px] text-sm ${activeTab === "records" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-blue-600"}`}
+            onClick={() => setActiveTab("records")}
+          >
+            <FileText className="ml-1 h-4 w-4" />
+            <span className="hidden sm:inline">سجلات الموقع</span>
+            <span className="sm:hidden">السجلات</span>
           </Button>
         </div>
 
@@ -715,59 +920,59 @@ export default function AdminPanel() {
             )}
 
             {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
-                <CardContent className="p-6">
+                <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-blue-100">إجمالي الأدوية</p>
-                      <p className="text-3xl font-bold">{drugs.length}</p>
+                      <p className="text-blue-100 text-sm">إجمالي الأدوية</p>
+                      <p className="text-2xl font-bold">{drugs.length}</p>
                     </div>
-                    <Database className="h-12 w-12 text-blue-200" />
+                    <Database className="h-8 w-8 text-blue-200" />
                   </div>
                 </CardContent>
               </Card>
 
               <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
-                <CardContent className="p-6">
+                <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-green-100">أدوية محدثة اليوم</p>
-                      <p className="text-3xl font-bold">
+                      <p className="text-green-100 text-sm">أدوية محدثة اليوم</p>
+                      <p className="text-2xl font-bold">
                         {drugs.filter((drug) => drug.updateDate === new Date().toLocaleDateString("ar-EG")).length}
                       </p>
                     </div>
-                    <TrendingUp className="h-12 w-12 text-green-200" />
+                    <TrendingUp className="h-8 w-8 text-green-200" />
                   </div>
                 </CardContent>
               </Card>
 
               <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-                <CardContent className="p-6">
+                <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-purple-100">متوسط السعر</p>
-                      <p className="text-3xl font-bold">
+                      <p className="text-purple-100 text-sm">متوسط السعر</p>
+                      <p className="text-2xl font-bold">
                         {drugs.length > 0
                           ? (drugs.reduce((sum, drug) => sum + drug.newPrice, 0) / drugs.length).toFixed(2)
                           : 0}
                       </p>
                     </div>
-                    <Users className="h-12 w-12 text-purple-200" />
+                    <Users className="h-8 w-8 text-purple-200" />
                   </div>
                 </CardContent>
               </Card>
 
               <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
-                <CardContent className="p-6">
+                <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-orange-100">أعلى سعر</p>
-                      <p className="text-3xl font-bold">
+                      <p className="text-orange-100 text-sm">أعلى سعر</p>
+                      <p className="text-2xl font-bold">
                         {drugs.length > 0 ? Math.max(...drugs.map((drug) => drug.newPrice)).toFixed(2) : 0}
                       </p>
                     </div>
-                    <TrendingUp className="h-12 w-12 text-orange-200" />
+                    <TrendingUp className="h-8 w-8 text-orange-200" />
                   </div>
                 </CardContent>
               </Card>
@@ -776,7 +981,7 @@ export default function AdminPanel() {
             {/* Controls */}
             <Card className="mb-6 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
               <CardContent className="p-4">
-                <div className="flex flex-col md:flex-row gap-4 items-center">
+                <div className="flex flex-col gap-4">
                   <div className="flex-1">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -793,7 +998,7 @@ export default function AdminPanel() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Button
                       onClick={() => {
                         setIsAddingNew(true)
@@ -802,12 +1007,14 @@ export default function AdminPanel() {
                       className="bg-green-600 hover:bg-green-700 text-white"
                     >
                       <Plus className="ml-2 h-4 w-4" />
-                      إضافة دواء جديد
+                      <span className="hidden sm:inline">إضافة دواء جديد</span>
+                      <span className="sm:hidden">إضافة دواء</span>
                     </Button>
 
                     <Button onClick={fetchDrugs} variant="outline" disabled={loading}>
                       <RefreshCw className={`ml-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                      تحديث
+                      <span className="hidden sm:inline">تحديث</span>
+                      <span className="sm:hidden">تحديث</span>
                     </Button>
                   </div>
                 </div>
@@ -907,7 +1114,73 @@ export default function AdminPanel() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
+                {/* Mobile Cards View */}
+                <div className="block md:hidden space-y-4">
+                  {paginatedAdminDrugs.map((drug) => (
+                    <Card key={drug.id} className="border border-gray-200">
+                      <CardContent className="p-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-blue-600">#{drug.no}</span>
+                            <div className="flex gap-1">
+                              <Button
+                                onClick={() => handleEditDrug(drug)}
+                                size="sm"
+                                variant="outline"
+                                className="h-8 w-8 p-0"
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                onClick={() => handleDeleteDrug(drug.id)}
+                                size="sm"
+                                variant="outline"
+                                className="h-8 w-8 p-0 text-red-600"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div>
+                            <h3 className="font-medium text-gray-900" dir="rtl">{drug.name}</h3>
+                            {drug.activeIngredient && (
+                              <p className="text-sm text-gray-600" dir="rtl">{drug.activeIngredient}</p>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <span className="text-gray-500">السعر الجديد:</span>
+                              <p className="font-semibold text-blue-600">{drug.newPrice.toFixed(2)} جنيه</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">السعر القديم:</span>
+                              <p className="font-semibold text-gray-600">{drug.oldPrice.toFixed(2)} جنيه</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Badge
+                              variant="outline"
+                              className={
+                                drug.newPrice - drug.oldPrice > 0
+                                  ? "text-red-600 bg-red-50"
+                                  : drug.newPrice - drug.oldPrice < 0
+                                    ? "text-green-600 bg-green-50"
+                                    : "text-gray-600 bg-gray-50"
+                              }
+                            >
+                              {drug.newPrice - drug.oldPrice > 0 ? "+" : ""}
+                              {(drug.newPrice - drug.oldPrice).toFixed(2)}
+                            </Badge>
+                            <span className="text-xs text-gray-500">{drug.updateDate}</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-gray-200">
@@ -1091,43 +1364,63 @@ export default function AdminPanel() {
 
                 {/* Admin Pagination Controls */}
                 {adminTotalPages > 1 && (
-                  <div className="flex items-center justify-center gap-2 mt-6">
-                    <Button
-                      variant="outline"
-                      onClick={() => setAdminCurrentPage((prev) => Math.max(prev - 1, 1))}
-                      disabled={adminCurrentPage === 1}
-                      className="border-gray-200 hover:bg-blue-50"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                      السابق
-                    </Button>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2 mt-6">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setAdminCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={adminCurrentPage === 1}
+                        className="border-gray-200 hover:bg-blue-50"
+                        size="sm"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                        <span className="hidden sm:inline">السابق</span>
+                      </Button>
 
-                    <div className="flex gap-1">
-                      {Array.from({ length: adminTotalPages }, (_, i) => i + 1).map((pageNum) => (
-                        <Button
-                          key={pageNum}
-                          variant={adminCurrentPage === pageNum ? "default" : "outline"}
-                          onClick={() => setAdminCurrentPage(pageNum)}
-                          className={`w-10 h-10 ${
-                            adminCurrentPage === pageNum
-                              ? "bg-blue-600 hover:bg-blue-700"
-                              : "border-gray-200 hover:bg-blue-50"
-                          }`}
-                        >
-                          {pageNum}
-                        </Button>
-                      ))}
+                      <div className="flex gap-1">
+                        {Array.from({ length: Math.min(adminTotalPages, 5) }, (_, i) => {
+                          let pageNum
+                          if (adminTotalPages <= 5) {
+                            pageNum = i + 1
+                          } else if (adminCurrentPage <= 3) {
+                            pageNum = i + 1
+                          } else if (adminCurrentPage >= adminTotalPages - 2) {
+                            pageNum = adminTotalPages - 4 + i
+                          } else {
+                            pageNum = adminCurrentPage - 2 + i
+                          }
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={adminCurrentPage === pageNum ? "default" : "outline"}
+                              onClick={() => setAdminCurrentPage(pageNum)}
+                              className={`w-8 h-8 text-sm ${
+                                adminCurrentPage === pageNum
+                                  ? "bg-blue-600 hover:bg-blue-700"
+                                  : "border-gray-200 hover:bg-blue-50"
+                              }`}
+                            >
+                              {pageNum}
+                            </Button>
+                          )
+                        })}
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        onClick={() => setAdminCurrentPage((prev) => Math.min(prev + 1, adminTotalPages))}
+                        disabled={adminCurrentPage === adminTotalPages}
+                        className="border-gray-200 hover:bg-blue-50"
+                        size="sm"
+                      >
+                        <span className="hidden sm:inline">التالي</span>
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
                     </div>
-
-                    <Button
-                      variant="outline"
-                      onClick={() => setAdminCurrentPage((prev) => Math.min(prev + 1, adminTotalPages))}
-                      disabled={adminCurrentPage === adminTotalPages}
-                      className="border-gray-200 hover:bg-blue-50"
-                    >
-                      التالي
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
+                    
+                    <div className="text-sm text-gray-600">
+                      صفحة {adminCurrentPage} من {adminTotalPages}
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -1882,6 +2175,368 @@ export default function AdminPanel() {
               </CardContent>
             </Card>
           </>
+        )}
+
+        {/* Data Management Tab */}
+        {activeTab === "data" && (
+          <>
+            {dataMessage && (
+              <Alert
+                className={`mb-6 ${dataMessage.type === "success" ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}
+              >
+                <AlertDescription
+                  className={`text-sm ${dataMessage.type === "success" ? "text-green-800" : "text-red-800"}`}
+                >
+                  {dataMessage.text}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Data Statistics */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-blue-100 text-sm">إجمالي الأدوية</p>
+                      <p className="text-2xl font-bold">{drugs.length}</p>
+                    </div>
+                    <Database className="h-8 w-8 text-blue-200" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-orange-100 text-sm">النواقص</p>
+                      <p className="text-2xl font-bold">{shortages.length}</p>
+                    </div>
+                    <AlertTriangle className="h-8 w-8 text-orange-200" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-green-100 text-sm">التقييمات</p>
+                      <p className="text-2xl font-bold">{productRatings.length + websiteRatings.length}</p>
+                    </div>
+                    <Star className="h-8 w-8 text-green-200" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-purple-100 text-sm">آخر تحديث</p>
+                      <p className="text-sm font-medium">
+                        {localDataManager.getStats()?.lastUpdated 
+                          ? new Date(localDataManager.getStats()!.lastUpdated).toLocaleDateString("ar-EG")
+                          : new Date().toLocaleDateString("ar-EG")
+                        }
+                      </p>
+                    </div>
+                    <RefreshCw className="h-8 w-8 text-purple-200" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Data Management Actions */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+              {/* Export Data */}
+              <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <Download className="h-5 w-5 text-blue-600" />
+                    تصدير البيانات
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-600 text-sm mb-4">
+                    تصدير جميع البيانات (الأدوية، النواقص، محتوى الصفحات) إلى ملف JSON
+                  </p>
+                  <Button 
+                    onClick={exportData} 
+                    disabled={isExporting}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {isExporting ? (
+                      <>
+                        <RefreshCw className="ml-2 h-4 w-4 animate-spin" />
+                        جاري التصدير...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="ml-2 h-4 w-4" />
+                        تصدير البيانات
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Import Data */}
+              <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <Upload className="h-5 w-5 text-green-600" />
+                    استيراد البيانات
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-600 text-sm mb-4">
+                    استيراد بيانات الأدوية من ملف JSON
+                  </p>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={importData}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      disabled={isImporting}
+                    />
+                    <Button 
+                      disabled={isImporting}
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {isImporting ? (
+                        <>
+                          <RefreshCw className="ml-2 h-4 w-4 animate-spin" />
+                          جاري الاستيراد...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="ml-2 h-4 w-4" />
+                          اختيار ملف
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Backup Data */}
+              <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <FileDown className="h-5 w-5 text-purple-600" />
+                    نسخة احتياطية
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-600 text-sm mb-4">
+                    إنشاء نسخة احتياطية كاملة من جميع البيانات
+                  </p>
+                  <Button 
+                    onClick={backupData}
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    <FileDown className="ml-2 h-4 w-4" />
+                    إنشاء نسخة احتياطية
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Delete All Data */}
+              <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <Trash className="h-5 w-5 text-red-600" />
+                    حذف جميع البيانات
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-600 text-sm mb-4">
+                    حذف جميع البيانات من قاعدة البيانات (لا يمكن التراجع)
+                  </p>
+                  <Button 
+                    onClick={deleteAllData}
+                    variant="destructive"
+                    className="w-full"
+                  >
+                    <Trash className="ml-2 h-4 w-4" />
+                    حذف جميع البيانات
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Cache Management */}
+              <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <Settings className="h-5 w-5 text-gray-600" />
+                    إدارة التخزين المؤقت
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-600 text-sm mb-4">
+                    مسح البيانات المخزنة مؤقتاً في المتصفح
+                  </p>
+                  <Button 
+                    onClick={() => {
+                      cacheManager.clear()
+                      localDataManager.clearAllData()
+                      setDataMessage({ type: "success", text: "تم مسح التخزين المؤقت والبيانات المحلية بنجاح" })
+                      setTimeout(() => setDataMessage(null), 3000)
+                    }}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    <RefreshCw className="ml-2 h-4 w-4" />
+                    مسح التخزين المؤقت
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Data Source Security */}
+              <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-green-600" />
+                    أمان مصدر البيانات
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-600 text-sm mb-4">
+                    البيانات محفوظة محلياً ومؤمنة من الوصول غير المصرح به
+                  </p>
+                  <div className="flex items-center gap-2 text-green-600">
+                    <Shield className="h-4 w-4" />
+                    <span className="text-sm font-medium">مؤمن</span>
+                  </div>
+                              </CardContent>
+            </Card>
+
+            {/* Command Interface */}
+            <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-gray-600" />
+                  واجهة الأوامر
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="command" className="text-sm font-medium text-gray-700">
+                      أدخل الأمر:
+                    </Label>
+                    <div className="flex gap-2 mt-2">
+                      <Input
+                        id="command"
+                        value={commandInput}
+                        onChange={(e) => setCommandInput(e.target.value)}
+                        placeholder="مثال: display-records"
+                        className="flex-1"
+                        onKeyPress={(e) => e.key === "Enter" && executeCommandHandler()}
+                      />
+                      <Button 
+                        onClick={executeCommandHandler}
+                        disabled={!commandInput.trim()}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        تنفيذ
+                      </Button>
+                    </div>
+                  </div>
+
+                  {commandResult && (
+                    <div className={`p-4 rounded-lg border ${
+                      commandResult.success 
+                        ? "bg-green-50 border-green-200" 
+                        : "bg-red-50 border-red-200"
+                    }`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`text-sm font-medium ${
+                          commandResult.success ? "text-green-800" : "text-red-800"
+                        }`}>
+                          {commandResult.success ? "نجح" : "فشل"}
+                        </span>
+                      </div>
+                      <p className={`text-sm ${
+                        commandResult.success ? "text-green-700" : "text-red-700"
+                      }`}>
+                        {commandResult.message}
+                      </p>
+                      {commandResult.data && (
+                        <div className="mt-3 p-3 bg-gray-50 rounded border">
+                          <pre className="text-xs text-gray-700 overflow-x-auto">
+                            {JSON.stringify(commandResult.data, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="text-sm text-gray-600">
+                    <p className="font-medium mb-2">الأوامر المتاحة:</p>
+                    <ul className="space-y-1 text-xs">
+                      <li>• <code className="bg-gray-100 px-1 rounded">display-records</code> - عرض سجلات الموقع</li>
+                      <li>• <code className="bg-gray-100 px-1 rounded">export</code> - تصدير البيانات</li>
+                      <li>• <code className="bg-gray-100 px-1 rounded">clear</code> - مسح جميع البيانات</li>
+                      <li>• <code className="bg-gray-100 px-1 rounded">system-info</code> - معلومات النظام</li>
+                      <li>• <code className="bg-gray-100 px-1 rounded">backup</code> - إنشاء نسخة احتياطية</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Data Information */}
+            <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-bold text-gray-800">
+                  معلومات قاعدة البيانات
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <h4 className="font-semibold text-gray-700 mb-2">إحصائيات البيانات:</h4>
+                    <ul className="space-y-1 text-gray-600">
+                      <li>• إجمالي الأدوية: {drugs.length}</li>
+                      <li>• النواقص المسجلة: {shortages.length}</li>
+                      <li>• تقييمات المنتجات: {productRatings.length}</li>
+                      <li>• تقييمات الموقع: {websiteRatings.length}</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-700 mb-2">معلومات النظام:</h4>
+                    <ul className="space-y-1 text-gray-600">
+                      <li>• آخر تحديث: {localDataManager.getStats()?.lastUpdated 
+                        ? new Date(localDataManager.getStats()!.lastUpdated).toLocaleDateString("ar-EG")
+                        : "غير محدد"
+                      }</li>
+                      <li>• حالة التخزين المؤقت: نشط</li>
+                      <li>• أمان البيانات: مؤمن</li>
+                      <li>• النسخ الاحتياطية: متاحة</li>
+                      <li>• إصدار البيانات: {localDataManager.getStats()?.version || "غير محدد"}</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* Site Records Tab */}
+        {activeTab === "records" && (
+          <div className="space-y-6">
+            <SiteRecordsDisplay 
+              drugs={drugs}
+              shortages={shortages}
+              ratings={[...productRatings, ...websiteRatings]}
+              lastUpdated={localDataManager.getStats()?.lastUpdated}
+            />
+          </div>
         )}
       </div>
     </div>
