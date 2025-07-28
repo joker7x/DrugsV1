@@ -10,7 +10,10 @@ export const commandManager = {
   // Display site records command
   displaySiteRecords: (): CommandResult => {
     try {
+      console.log("Executing displaySiteRecords command")
       const localData = localDataManager.loadData()
+      console.log("Local data:", localData)
+      
       if (!localData) {
         return {
           success: false,
@@ -65,7 +68,10 @@ export const commandManager = {
   // Export data command
   exportData: (): CommandResult => {
     try {
+      console.log("Executing exportData command")
       const exportData = localDataManager.exportData()
+      console.log("Export data:", exportData)
+      
       if (!exportData) {
         return {
           success: false,

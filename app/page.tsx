@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { cacheManager } from "@/lib/cache"
 import Link from "next/link"
-import DrugDetailsModal from "@/components/drug-details-modal"
+
 import WebsiteRatingSection from "@/components/website-rating-section"
 import { shortageManager, type Shortage } from "@/lib/shortages"
 
@@ -54,8 +54,7 @@ export default function DrugPricingApp() {
   const [isOnline, setIsOnline] = useState(true)
   const [retryCount, setRetryCount] = useState(0)
   const [isFromCache, setIsFromCache] = useState(false)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null)
+
   const [criticalShortagesCount, setCriticalShortagesCount] = useState(0)
 
   // Check online status
@@ -323,8 +322,7 @@ export default function DrugPricingApp() {
   }
 
   const handleDrugCardClick = (drug: Drug) => {
-    setSelectedDrug(drug)
-    setIsModalOpen(true)
+    // Removed modal functionality - no action needed
   }
 
   if (loading) {
@@ -365,18 +363,18 @@ export default function DrugPricingApp() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       <div className="container mx-auto px-4 py-6">
         {/* Header */}
-        <header className="mb-6 bg-gradient-to-r from-blue-600 to-purple-700 text-white rounded-lg p-4 shadow-xl">
+        <header className="mb-6 bg-gradient-to-r from-blue-600 to-purple-700 text-white rounded-2xl p-6 shadow-2xl backdrop-blur-sm">
           <div className="flex flex-col items-center justify-center gap-2 mb-4">
             <Pill className="h-10 w-10 text-white" />
             <span className="font-bold text-2xl text-white">دليل الأدوية</span>
           </div>
 
-          <nav className="flex gap-2 flex-wrap justify-center">
+          <nav className="flex gap-3 flex-wrap justify-center">
             <Link href="/about">
               <Button
                 variant="outline"
                 size="sm"
-                className="border-white/50 text-white hover:bg-white/20 hover:text-white bg-transparent"
+                className="border-white/30 text-white hover:bg-white/20 hover:text-white bg-white/10 backdrop-blur-sm rounded-xl"
               >
                 <Info className="h-4 w-4 ml-2 text-white" />
                 عن الموقع
@@ -386,7 +384,7 @@ export default function DrugPricingApp() {
               <Button
                 variant="outline"
                 size="sm"
-                className="border-white/50 text-white hover:bg-white/20 hover:text-white bg-transparent"
+                className="border-white/30 text-white hover:bg-white/20 hover:text-white bg-white/10 backdrop-blur-sm rounded-xl"
               >
                 <Phone className="h-4 w-4 ml-2 text-white" />
                 تواصل معنا
@@ -396,7 +394,7 @@ export default function DrugPricingApp() {
               <Button
                 variant="outline"
                 size="sm"
-                className="border-white/50 text-white hover:bg-white/20 hover:text-white bg-transparent relative"
+                className="border-white/30 text-white hover:bg-white/20 hover:text-white bg-white/10 backdrop-blur-sm rounded-xl relative"
               >
                 <Pill className="h-4 w-4 ml-2 text-white" />
                 نواقص الأدوية
@@ -414,10 +412,10 @@ export default function DrugPricingApp() {
         </header>
 
         {/* Title */}
-        <div className="text-center mb-6">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="p-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full">
-              <Pill className="h-8 w-8 text-white" />
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="p-4 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl shadow-lg">
+              <Pill className="h-10 w-10 text-white" />
             </div>
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               أسعار الأدوية المصرية
@@ -458,8 +456,8 @@ export default function DrugPricingApp() {
         )}
 
         {/* Controls */}
-        <Card className="mb-6 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-4">
+        <Card className="mb-6 shadow-xl border-0 bg-white/90 backdrop-blur-sm rounded-2xl">
+          <CardContent className="p-6">
             <div className="flex flex-col md:flex-row gap-4 items-center">
               <div className="flex-1">
                 <div className="relative">
@@ -499,7 +497,7 @@ export default function DrugPricingApp() {
                 }}
                 variant="outline"
                 size="sm"
-                className="border-gray-200 hover:bg-blue-50 bg-transparent"
+                className="border-gray-200 hover:bg-blue-50 bg-transparent rounded-xl"
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
@@ -533,10 +531,9 @@ export default function DrugPricingApp() {
             {paginatedDrugs.map((drug) => (
               <Card
                 key={drug.id}
-                className="overflow-hidden hover:shadow-lg transition-all duration-200 border-0 bg-white/90 backdrop-blur-sm group hover:scale-[1.02] cursor-pointer"
-                onClick={() => handleDrugCardClick(drug)}
+                className="overflow-hidden hover:shadow-xl transition-all duration-300 border-0 bg-white/95 backdrop-blur-sm group hover:scale-[1.02] rounded-2xl"
               >
-                <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-purple-50 group-hover:from-blue-100 group-hover:to-purple-100 transition-colors">
+                <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-purple-50 group-hover:from-blue-100 group-hover:to-purple-100 transition-colors rounded-t-2xl">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <CardTitle className="text-base font-semibold text-gray-800 line-clamp-2 leading-tight" dir="rtl">
@@ -612,17 +609,17 @@ export default function DrugPricingApp() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-3 mt-8">
             <Button
               variant="outline"
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              className="border-gray-200 hover:bg-blue-50"
+              className="border-gray-200 hover:bg-blue-50 rounded-xl"
             >
               السابق
             </Button>
 
-            <div className="flex gap-1">
+            <div className="flex gap-2">
               {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                 const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
                 return (
@@ -630,8 +627,8 @@ export default function DrugPricingApp() {
                     key={pageNum}
                     variant={currentPage === pageNum ? "default" : "outline"}
                     onClick={() => setCurrentPage(pageNum)}
-                    className={`w-10 h-10 ${
-                      currentPage === pageNum ? "bg-blue-600 hover:bg-blue-700" : "border-gray-200 hover:bg-blue-50"
+                    className={`w-12 h-12 rounded-xl ${
+                      currentPage === pageNum ? "bg-blue-600 hover:bg-blue-700 shadow-lg" : "border-gray-200 hover:bg-blue-50"
                     }`}
                   >
                     {pageNum}
@@ -644,7 +641,7 @@ export default function DrugPricingApp() {
               variant="outline"
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
-              className="border-gray-200 hover:bg-blue-50"
+              className="border-gray-200 hover:bg-blue-50 rounded-xl"
             >
               التالي
             </Button>
@@ -654,8 +651,6 @@ export default function DrugPricingApp() {
         {/* Website Rating Section */}
         <WebsiteRatingSection />
 
-        {/* Drug Details Modal */}
-        <DrugDetailsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} drug={selectedDrug} />
       </div>
     </div>
   )

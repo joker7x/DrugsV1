@@ -422,15 +422,25 @@ export default function AdminPanel() {
   const handleDeleteDrug = async (drugId: string) => {
     if (!confirm("هل أنت متأكد من حذف هذا الدواء؟")) return
 
-    const success = await deleteDrugFromFirebase(drugId)
-    if (success) {
-      setSaveMessage("تم حذف الدواء بنجاح")
-      fetchDrugs()
-      setTimeout(() => setSaveMessage(""), 3000)
-    } else {
+    try {
+      const success = await deleteDrugFromFirebase(drugId)
+      if (success) {
+        // Remove from local storage
+        localDataManager.deleteDrug(drugId)
+        
+        // Update state immediately
+        setDrugs(prev => prev.filter(drug => drug.id !== drugId))
+        
+        setSaveMessage("تم حذف الدواء بنجاح")
+      } else {
+        setSaveMessage("فشل حذف الدواء")
+      }
+    } catch (error) {
+      console.error("Delete drug error:", error)
       setSaveMessage("فشل حذف الدواء")
-      setTimeout(() => setSaveMessage(""), 3000)
     }
+    
+    setTimeout(() => setSaveMessage(""), 3000)
   }
 
   const handleSaveAboutContent = async () => {
@@ -568,18 +578,26 @@ export default function AdminPanel() {
   const exportData = async () => {
     setIsExporting(true)
     try {
-      // Use local data manager for export
-      const localExportData = localDataManager.exportData()
-      if (!localExportData) {
-        throw new Error("لا توجد بيانات محلية للتصدير")
-      }
-
+      // Create export data from current state
       const exportData = {
-        ...localExportData,
+        drugs: drugs,
+        shortages: shortages,
         aboutContent: aboutContent,
         contactContent: contactContent,
+        ratings: {
+          productRatings: productRatings,
+          websiteRatings: websiteRatings,
+        },
         exportDate: new Date().toISOString(),
+        totalDrugs: drugs.length,
+        totalShortages: shortages.length,
+        totalProductRatings: productRatings.length,
+        totalWebsiteRatings: websiteRatings.length,
       }
+
+      // Also save to local storage
+      localDataManager.saveDrugs(drugs)
+      localDataManager.saveShortages(shortages)
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" })
       const url = URL.createObjectURL(blob)
@@ -593,6 +611,7 @@ export default function AdminPanel() {
 
       setDataMessage({ type: "success", text: "تم تصدير البيانات بنجاح" })
     } catch (error) {
+      console.error("Export error:", error)
       setDataMessage({ type: "error", text: "فشل في تصدير البيانات" })
     }
     setIsExporting(false)
@@ -618,18 +637,20 @@ export default function AdminPanel() {
           throw new Error("لا توجد بيانات أدوية صحيحة في الملف")
         }
 
-        // Save to local storage first
-        const success = localDataManager.importData(importedData)
-        if (!success) {
-          throw new Error("فشل في حفظ البيانات محلياً")
-        }
+        // Save to local storage
+        localDataManager.saveDrugs(validDrugs)
 
-        // Also save to Firebase for backup
+        // Save to Firebase
         for (const drug of validDrugs) {
           await saveDrugToFirebase(drug, drug.id)
         }
 
+        // Update state
         setDrugs(validDrugs)
+        
+        // Refresh data
+        await fetchDrugs()
+        
         setDataMessage({ 
           type: "success", 
           text: `تم استيراد ${validDrugs.length} دواء بنجاح` 
@@ -638,6 +659,7 @@ export default function AdminPanel() {
         throw new Error("تنسيق الملف غير صحيح")
       }
     } catch (error: any) {
+      console.error("Import error:", error)
       setDataMessage({ 
         type: "error", 
         text: error.message || "فشل في استيراد البيانات" 
@@ -656,22 +678,37 @@ export default function AdminPanel() {
     try {
       // Delete all drugs from Firebase
       for (const drug of drugs) {
-        await deleteDrugFromFirebase(drug.id)
+        try {
+          await deleteDrugFromFirebase(drug.id)
+        } catch (error) {
+          console.error(`Failed to delete drug ${drug.id}:`, error)
+        }
       }
 
       // Delete all shortages
       for (const shortage of shortages) {
-        await shortageManager.deleteShortage(shortage.id)
+        try {
+          await shortageManager.deleteShortage(shortage.id)
+        } catch (error) {
+          console.error(`Failed to delete shortage ${shortage.id}:`, error)
+        }
       }
 
       // Clear local data
       localDataManager.clearAllData()
       cacheManager.clear()
 
+      // Update state
       setDrugs([])
       setShortages([])
+      
+      // Refresh data
+      await fetchDrugs()
+      await fetchShortages()
+      
       setDataMessage({ type: "success", text: "تم حذف جميع البيانات بنجاح" })
     } catch (error) {
+      console.error("Delete all data error:", error)
       setDataMessage({ type: "error", text: "فشل في حذف البيانات" })
     }
     setTimeout(() => setDataMessage(null), 3000)
@@ -679,14 +716,10 @@ export default function AdminPanel() {
 
   const backupData = async () => {
     try {
-      // Get local data for backup
-      const localData = localDataManager.exportData()
-      if (!localData) {
-        throw new Error("لا توجد بيانات محلية للنسخ الاحتياطي")
-      }
-
+      // Create backup data from current state
       const backupData = {
-        ...localData,
+        drugs: drugs,
+        shortages: shortages,
         aboutContent: aboutContent,
         contactContent: contactContent,
         ratings: {
@@ -694,9 +727,20 @@ export default function AdminPanel() {
           websiteRatings: websiteRatings,
         },
         backupDate: new Date().toISOString(),
+        totalDrugs: drugs.length,
+        totalShortages: shortages.length,
         totalProductRatings: productRatings.length,
         totalWebsiteRatings: websiteRatings.length,
+        version: "1.0.0",
+        systemInfo: {
+          userAgent: navigator.userAgent,
+          timestamp: Date.now(),
+        }
       }
+
+      // Also save to local storage
+      localDataManager.saveDrugs(drugs)
+      localDataManager.saveShortages(shortages)
 
       const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" })
       const url = URL.createObjectURL(blob)
@@ -710,6 +754,7 @@ export default function AdminPanel() {
 
       setDataMessage({ type: "success", text: "تم إنشاء نسخة احتياطية بنجاح" })
     } catch (error) {
+      console.error("Backup error:", error)
       setDataMessage({ type: "error", text: "فشل في إنشاء النسخة الاحتياطية" })
     }
     setTimeout(() => setDataMessage(null), 3000)
@@ -718,13 +763,27 @@ export default function AdminPanel() {
   const executeCommandHandler = () => {
     if (!commandInput.trim()) return
 
-    const result = executeCommand(commandInput.trim())
-    setCommandResult(result)
-    
-    if (result.success) {
-      setDataMessage({ type: "success", text: result.message })
-    } else {
-      setDataMessage({ type: "error", text: result.message })
+    try {
+      const result = executeCommand(commandInput.trim())
+      setCommandResult(result)
+      
+      if (result.success) {
+        setDataMessage({ type: "success", text: result.message })
+        
+        // Handle specific commands
+        if (commandInput.trim().toLowerCase().includes("export")) {
+          exportData()
+        } else if (commandInput.trim().toLowerCase().includes("backup")) {
+          backupData()
+        } else if (commandInput.trim().toLowerCase().includes("clear")) {
+          deleteAllData()
+        }
+      } else {
+        setDataMessage({ type: "error", text: result.message })
+      }
+    } catch (error) {
+      console.error("Command execution error:", error)
+      setDataMessage({ type: "error", text: "فشل في تنفيذ الأمر" })
     }
     
     setTimeout(() => {

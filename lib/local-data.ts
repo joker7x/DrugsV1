@@ -69,13 +69,16 @@ export const localDataManager = {
   // Save drugs to local storage
   saveDrugs: (drugs: LocalDrug[]) => {
     try {
+      console.log("Saving drugs to local storage:", drugs.length)
       const currentData = localDataManager.loadData() || { drugs: [], shortages: [], lastUpdated: "", version: DATA_VERSION }
       const updatedData: LocalData = {
         ...currentData,
         drugs,
         lastUpdated: new Date().toISOString(),
       }
-      return localDataManager.saveData(updatedData)
+      const result = localDataManager.saveData(updatedData)
+      console.log("Save drugs result:", result)
+      return result
     } catch (error) {
       console.error("Failed to save drugs:", error)
       return false
