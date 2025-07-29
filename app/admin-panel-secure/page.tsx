@@ -381,6 +381,10 @@ export default function AdminPanel() {
     )
 
     if (success) {
+      // Update local storage
+      localDataManager.updateDrug(editingDrug.id, editingDrug)
+      // Update state immediately
+      setDrugs((prev) => prev.map((d) => d.id === editingDrug.id ? { ...editingDrug } : d))
       setSaveMessage("تم حفظ التعديلات بنجاح")
       setEditingDrug(null)
       fetchDrugs()
@@ -427,11 +431,10 @@ export default function AdminPanel() {
       if (success) {
         // Remove from local storage
         localDataManager.deleteDrug(drugId)
-        
         // Update state immediately
         setDrugs(prev => prev.filter(drug => drug.id !== drugId))
-        
         setSaveMessage("تم حذف الدواء بنجاح")
+        await fetchDrugs() // Full sync
       } else {
         setSaveMessage("فشل حذف الدواء")
       }
@@ -439,7 +442,6 @@ export default function AdminPanel() {
       console.error("Delete drug error:", error)
       setSaveMessage("فشل حذف الدواء")
     }
-    
     setTimeout(() => setSaveMessage(""), 3000)
   }
 

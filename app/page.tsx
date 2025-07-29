@@ -361,7 +361,7 @@ export default function DrugPricingApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto px-2 py-6">
         {/* Header */}
         <header className="mb-6 bg-gradient-to-r from-blue-600 to-purple-700 text-white rounded-2xl p-6 shadow-2xl backdrop-blur-sm">
           <div className="flex flex-col items-center justify-center gap-2 mb-4">
@@ -458,7 +458,7 @@ export default function DrugPricingApp() {
         {/* Controls */}
         <Card className="mb-6 shadow-xl border-0 bg-white/90 backdrop-blur-sm rounded-2xl">
           <CardContent className="p-6">
-            <div className="flex flex-col md:flex-row gap-4 items-center">
+            <div className="flex flex-col gap-3 md:flex-row md:gap-4 items-center">
               <div className="flex-1">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -469,7 +469,7 @@ export default function DrugPricingApp() {
                       setSearchTerm(e.target.value)
                       setCurrentPage(1)
                     }}
-                    className="pl-10 border-gray-200 focus:border-blue-400 focus:ring-blue-400"
+                    className="pl-10 border-gray-200 focus:border-blue-400 focus:ring-blue-400 w-full"
                     dir="rtl"
                   />
                 </div>
@@ -479,7 +479,7 @@ export default function DrugPricingApp() {
                 value={sortBy}
                 onValueChange={(value: "original" | "name" | "price" | "change") => setSortBy(value)}
               >
-                <SelectTrigger className="w-48 border-gray-200 focus:border-blue-400 focus:ring-blue-400">
+                <SelectTrigger className="w-48 border-gray-200 focus:border-blue-400 focus:ring-blue-400 w-full">
                   <SelectValue placeholder="ترتيب حسب" />
                 </SelectTrigger>
                 <SelectContent>
@@ -497,13 +497,14 @@ export default function DrugPricingApp() {
                 }}
                 variant="outline"
                 size="sm"
-                className="border-gray-200 hover:bg-blue-50 bg-transparent rounded-xl"
+                className="border-gray-200 hover:bg-blue-50 bg-transparent rounded-xl w-full"
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
                 تحديث
               </Button>
             </div>
+            <div className="mt-4" />
           </CardContent>
         </Card>
 
@@ -527,7 +528,7 @@ export default function DrugPricingApp() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
             {paginatedDrugs.map((drug) => (
               <Card
                 key={drug.id}
