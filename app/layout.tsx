@@ -16,6 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ar" dir="rtl">
+      <head>
+        <meta name="theme-color" content="#6D28D9" />
+      </head>
       <body className={inter.className + ' overflow-x-hidden bg-gray-50'}>{children}</body>
     </html>
   )

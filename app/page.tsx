@@ -413,8 +413,8 @@ export default function DrugPricingApp() {
 
         {/* Title */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-4 mb-4">
-            <div className="p-4 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl shadow-lg">
+          <div className="flex flex-col items-center text-center gap-2 md:flex-row md:items-center md:text-right md:gap-4 mb-4">
+            <div className="p-4 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl shadow-lg mb-2 md:mb-0">
               <Pill className="h-10 w-10 text-white" />
             </div>
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
